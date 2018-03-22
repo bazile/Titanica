@@ -8,10 +8,11 @@ namespace TitanicaParser.Model
 		First, Second, Third,
 		DeckCrew, EngineeringCrew, VictuallingCrew
 	}
+
 	public enum Sex { Unknown, Male, Female }
 	public enum City { Belfast, Southampton, Cherbourg, Queenstown }
 	public enum AgeGroup { Unknown, Infant, Child, Teenager, Adult, Senior }
-	public enum Deck { A, B, C, D, E, F, G }
+	public enum Deck { Unknown, A, B, C, D, E, F, G }
 
 	public class TitanicPassenger : IEquatable<TitanicPassenger>
 	{
@@ -29,18 +30,35 @@ namespace TitanicaParser.Model
 		public DateTime? BirthDate { get; set; }
 		public DateTime? DeathDate { get; set; }
 
-		public string BirthPlace { get; set; }
+		public Address BirthAddress { get; set; }
 		public string TicketNo { get; set; }
 		public string CabinNo { get; set; }
 		public Price TicketPrice { get; set; }
-		public City Boarded { get; set; } // Embarked?
+		public City Boarded { get; set; } // Переименовать в Embarked?
 		public string JobTitle { get; set; }
 		public string Lifeboat { get; set; }
 		public string Url { get; set; }
 
-		public string FullName => HonorificPrefix + " " + FamilyName + ", " + GivenName;
+		[System.Xml.Serialization.XmlAttribute("id")]
+		public string Id { get; set; }
 
-		//public Deck Deck { get { } }
+		public string FullName
+		{
+			get { return HonorificPrefix + " " + FamilyName + ", " + GivenName + (string.IsNullOrEmpty(HonorificSuffix) ? "" : " " + HonorificSuffix); }
+		}
+
+		public Deck Deck
+		{
+			get
+			{
+				Deck deck = default(Deck);
+				if (CabinNo != null)
+				{
+					Enum.TryParse<Deck>(CabinNo.Substring(0, 1), out deck);
+				}
+				return deck;
+			}
+		}
 
 		public AgeGroup AgeGroup
 		{
@@ -76,7 +94,47 @@ namespace TitanicaParser.Model
 			);
 		}
 
-		public override string ToString() => FullName;
+		public override string ToString()
+		{
+			return FullName;
+		}
+	}
+
+	public class Address : IEquatable<Address>
+	{
+		public string Country { get; set; }
+		public string State { get; set; }
+		public string City { get; set; }
+
+		public Address()
+		{
+			Country = "";
+			State = "";
+			City = "";
+		}
+
+		public bool Equals(Address other)
+		{
+			return string.Equals(Country, other.Country)
+				&& string.Equals(State, other.State)
+				&& string.Equals(City, other.City);
+		}
+
+		public override string ToString()
+		{
+			string s = Country;
+			if (State.Length > 0)
+			{
+				if (s.Length > 0) s += ", ";
+				s += State;
+			}
+			if (City.Length > 0)
+			{
+				if (s.Length > 0) s += ", ";
+				s += City;
+			}
+			return s;
+		}
 	}
 
 	public static class Titanic

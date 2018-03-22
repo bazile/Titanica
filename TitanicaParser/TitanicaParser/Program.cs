@@ -9,6 +9,7 @@ using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Xml;
 using System.Xml.Serialization;
 using AngleSharp.Dom;
 using AngleSharp.Dom.Html;
@@ -22,42 +23,78 @@ namespace TitanicaParser
 	{
 		static void Main(string[] args)
 		{
-			//MinifyAllHtml(GetHtmlPath());
+			////MinifyAllHtml(GetHtmlPath());
 
-			string zipPath = GetHtmlPath() + ".zip";
-			Console.WriteLine(zipPath);
-			List<TitanicPassenger> passengers = ParsePassengerListings(zipPath);
-			ParsePassengerDetails(zipPath, passengers);
+			ParseAll();
 
-			//Console.WriteLine(passengers.Count(pax => pax.AgeMonths.HasValue));
-			//Console.WriteLine(passengers.Count(pax => pax.BirthDate.HasValue));
-			//Console.WriteLine(passengers.Count(pax => pax.DeathDate.HasValue));
-
-			//bool isValid = true;
-			//Console.WriteLine(passengers.Count == 2139);
-			//Console.WriteLine(passengers.Count(pax => pax.Sex == Sex.Unknown));
-
-			// Save to XML
 			var serializer = new XmlSerializer(typeof(List<TitanicPassenger>));
-			using (var fstream = File.Create("titanic.xml"))
+			List<TitanicPassenger> passengers;
+			using (var fstream = File.OpenRead("titanic.xml"))
 			{
-				serializer.Serialize(fstream, passengers);
+				passengers = (List<TitanicPassenger>)serializer.Deserialize(fstream);
+			}
+
+			// Check for duplicates
+			foreach (var paxGrp in passengers.GroupBy(p => p).Where(g => g.Count() > 1))
+			{
+				Console.WriteLine("Duplicates?");
+				foreach (var pax in paxGrp)
+				{
+					Console.WriteLine($"  {pax}");
+				}
+			}
+			foreach (var paxGrp in passengers.Select(p => p.FullName).GroupBy(s => s).Where(g => g.Count() > 1))
+			{
+				Console.WriteLine($"Duplicate full name? - {paxGrp.Key} - {paxGrp.Count()}");
+				var tempPassengers = passengers.Where(pax => pax.FullName == paxGrp.Key).ToArray();
 			}
 		}
 
-		static string GetHtmlPath()
+		static string GetZippedHtmlPath()
 		{
 			DirectoryInfo di = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
 
 			do
 			{
-				string path = Path.Combine(di.FullName, "Html", "encyclopedia-titanica");
-				if (Directory.Exists(path)) return path;
+				string path = Path.Combine(di.FullName, "Html", "encyclopedia-titanica.zip");
+				if (File.Exists(path)) return path;
 
 				di = di.Parent;
 			} while (di != null);
 
-			throw new InvalidOperationException("Каталог encyclopedia-titanica не найден");
+			throw new InvalidOperationException("Файл 'encyclopedia-titanica.zip' не найден");
+		}
+
+		static void ParseAll()
+		{
+			string zipPath = GetZippedHtmlPath();
+			Console.WriteLine(zipPath);
+			List<TitanicPassenger> passengers = ParsePassengerListings(zipPath);
+			ParsePassengerDetails(zipPath, passengers);
+
+			// Additional validation
+			// Check there is no 'uknown' sex
+			if (passengers.Count(pax => pax.Sex == Sex.Unknown) > 0)
+			{
+				Console.WriteLine("ERROR: Found passengers with 'Unknown' sex");
+				return;
+			}
+			// Check that Id is unqiue
+			passengers.ToDictionary(pax => pax.Id);
+
+			// Save to XML
+			using (var fstream = File.Create("titanic.xml"))
+			{
+				var writerSettings = new XmlWriterSettings
+				{
+					Indent = false
+				};
+				using (var writer = XmlWriter.Create(fstream, writerSettings))
+				{
+					var serializer = new XmlSerializer(typeof(List<TitanicPassenger>));
+					serializer.Serialize(writer, passengers);
+				}
+			}
 		}
 
 		static List<TitanicPassenger> ParsePassengerListings(string zipPath)
@@ -79,11 +116,13 @@ namespace TitanicaParser
 						if (cells.Length == 0) continue;
 
 						pax.Url = cells[0].QuerySelector("a[itemprop=\"url\"]").GetAttribute("href");
+						pax.Id = pax.Url.Trim('/').Split('/')[1].ToLower().Replace(".html", "");
 
 						pax.HasSurvived = !pax.Url.StartsWith("/titanic-victim/");
 						pax.FamilyName = cells[0].QuerySelector("*[itemprop=\"familyName\"]").TextContent;
 						pax.GivenName = cells[0].QuerySelector("*[itemprop=\"givenName\"]").TextContent;
 						pax.HonorificPrefix = cells[0].QuerySelector("*[itemprop=\"honorificPrefix\"]").TextContent;
+
 						if (pax.HonorificPrefix.AnyOf("Doña", "Miss", "Mlle", "Mme.", "Ms", "Mrs", "Sra."))
 							pax.Sex = Sex.Female;
 						else if (pax.HonorificPrefix.AnyOf("Captain", "Col.", "Colonel", "Don.", "Dr", "Fr", "Major", "Master", "Mr", "Rev.", "Revd", "Sir", "Sr."))
@@ -91,6 +130,11 @@ namespace TitanicaParser
 						else
 						{
 							if (pax.FullName.EndsWith(", Lady") || pax.FullName.EndsWith(", Countess of")) pax.Sex = Sex.Female;
+						}
+						// Исключение
+						if (pax.HonorificPrefix == "Dr" && pax.FullName == "Dr LEADER, Alice May")
+						{
+							pax.Sex = Sex.Female;
 						}
 
 						string ageText = cells[1].TextContent.Trim();
@@ -153,6 +197,32 @@ namespace TitanicaParser
 					IHtmlDocument htmlDoc = new HtmlParser().Parse(html);
 					IElement personElement = htmlDoc.QuerySelector(".sidebar > div[itemtype='http://schema.org/Person']");
 
+					// Birth place
+					var bornElement = (IElement)htmlDoc.QuerySelectorAll("div > strong")
+						.Where(el => el.TextContent == "Born")
+						.Select(el => el.Parent)
+						.SingleOrDefault();
+					if (bornElement != null)
+					{
+						var bornDict = bornElement.QuerySelectorAll<IHtmlAnchorElement>("a")
+							.Where(el => el.Href.Contains("born"))
+							.ToDictionary(el =>
+							{
+								if (el.Href.Contains("state-")) return "state";
+								if (el.Href.Contains("country-")) return "country";
+								return "city";
+							}, el => el.TextContent);
+						if (bornDict.Count > 0)
+						{
+							pax.BirthAddress = new Address
+							{
+								Country = bornDict.GetValueOrDefault("country", ""),
+								State = bornDict.GetValueOrDefault("state", ""),
+								City = bornDict.GetValueOrDefault("city", ""),
+							};
+						}
+					}
+
 					// Properties
 					var properties = (personElement ?? htmlDoc.DocumentElement).QuerySelectorAll("span[itemprop]").Select(el => new {
 						itemprop = el.GetAttribute("itemprop"),
@@ -166,8 +236,25 @@ namespace TitanicaParser
 					{
 						pax.HonorificSuffix = properties.SingleOrDefault(p => p.itemprop == "honorificSuffix")?.text;
 						pax.BirthDate = properties.SingleOrDefault(p => p.itemprop == "birthDate")?.content.ParseTitanicaDate();
+						if (pax.BirthDate.HasValue)
+						{
+							pax.AgeMonths = pax.BirthDate.Value.GetAgeMonths(Titanic.SunkDate);
+						}
 						pax.DeathDate = properties.SingleOrDefault(p => p.itemprop == "deathDate")?.content.ParseTitanicaDate();
-						pax.BirthPlace = properties.SingleOrDefault(p => p.itemprop == "birthPlace")?.content;
+
+						//string birthPlace = properties.SingleOrDefault(p => p.itemprop == "birthPlace")?.content;
+						//if (birthPlace != null)
+						//{
+						//	var birthPlaceParts = birthPlace.Split(',');
+						//	//if (birthPlaceParts.Length > 3) Console.WriteLine(birthPlace);
+						//	pax.BirthAddress = new Address
+						//	{
+						//		Country = birthPlaceParts.Last().Trim(),
+						//		City = birthPlaceParts[0].Trim(),
+						//		State = birthPlaceParts.Length == 3 ? birthPlaceParts[1].Trim() : "",
+						//	};
+						//}
+
 						if (string.IsNullOrEmpty(pax.JobTitle))
 						{
 							pax.JobTitle = properties.SingleOrDefault(p => p.itemprop == "jobTitle")?.text;
@@ -177,7 +264,8 @@ namespace TitanicaParser
 						AssertAreEqual("FamilyName", pax.FamilyName, properties.SingleOrDefault(p => p.itemprop == "familyName")?.text);
 						AssertAreEqual("HonorificPrefix", pax.HonorificPrefix, properties.SingleOrDefault(p => p.itemprop == "honorificPrefix")?.text);
 						AssertAreEqual("JobTitle", pax.JobTitle, properties.SingleOrDefault(p => p.itemprop == "jobTitle")?.text);
-						//TODO: assert age
+						AssertSex(pax.Sex, properties.SingleOrDefault(p => p.itemprop == "gender").text);
+						AssertAge(pax);
 					}
 
 					// Text after <strong> elements
@@ -358,6 +446,25 @@ namespace TitanicaParser
 			if (string.Equals(s1, s2, StringComparison.OrdinalIgnoreCase)) return;
 
 			throw new ModelValidationException($"{title} mismatch: '{s1}' ≠ '{s2}'");
+		}
+
+		static void AssertSex(Sex sex1, string sex2)
+		{
+			sex2 = sex2.TrimStart('(').TrimEnd(')');
+			if (sex1 == (Sex)Enum.Parse(typeof(Sex), sex2)) return;
+
+			throw new ModelValidationException($"Sex mismatch: '{sex1}' ≠ '{sex2}'");
+		}
+
+		static void AssertAge(TitanicPassenger pax)
+		{
+			if (!pax.AgeMonths.HasValue || !pax.BirthDate.HasValue) return;
+
+			int age1 = pax.AgeMonths.Value;
+			int age2 = pax.BirthDate.Value.GetAgeMonths(Titanic.SunkDate);
+			if (age1 == age2) return;
+
+			throw new ModelValidationException($"Age mismatch: '{age1}' ≠ '{age2}'");
 		}
 
 		#endregion

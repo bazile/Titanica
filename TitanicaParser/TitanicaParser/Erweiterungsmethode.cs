@@ -64,5 +64,32 @@ namespace TitanicaParser
 				hashSet.Add(item);
 			}
 		}
+
+		public static int GetAge(this DateTime birthDate, DateTime date)
+		{
+			int years = date.Year - birthDate.Year;
+			if ((birthDate.Month == date.Month && birthDate.Day > date.Day) || birthDate.Month > date.Month)
+			{
+				years--;
+			}
+			return years;
+		}
+
+		public static int GetAgeMonths(this DateTime birthDate, DateTime date)
+		{
+			int months = 0;
+			while (birthDate.Year < date.Year || (birthDate.Year == date.Year && birthDate.Month < date.Month))
+			{
+				months++;
+				birthDate = birthDate.AddMonths(1);
+			}
+			return months;
+		}
+
+		public static TValue GetValueOrDefault<TKey, TValue>(this Dictionary<TKey, TValue> dict, TKey key, TValue defaultValue)
+		{
+			TValue value;
+			return dict.TryGetValue(key, out value) ? value : defaultValue;
+		}
 	}
 }
