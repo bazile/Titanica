@@ -212,7 +212,7 @@ namespace TitanicaParser
 								if (el.Href.Contains("country-")) return "country";
 								return "city";
 							}, el => el.TextContent);
-						if (bornDict.Count > 0)
+						if (bornDict.Count > 0 && !(bornDict.Count == 1 && bornDict.First().Value == "at Sea"))
 						{
 							pax.BirthAddress = new Address
 							{
