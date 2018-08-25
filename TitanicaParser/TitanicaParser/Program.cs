@@ -79,6 +79,12 @@ namespace TitanicaParser
 				Console.WriteLine("ERROR: Found passengers with 'Unknown' sex");
 				return;
 			}
+			// Check there is no 'uknown' class
+			if (passengers.Count(pax => pax.Class == Class.Unknown) > 0)
+			{
+				Console.WriteLine("ERROR: Found passengers with 'Unknown' class");
+				return;
+			}
 			// Check that Id is unqiue
 			passengers.ToDictionary(pax => pax.Id);
 
@@ -235,6 +241,11 @@ namespace TitanicaParser
 					if (properties.Length > 0)
 					{
 						pax.HonorificSuffix = properties.SingleOrDefault(p => p.itemprop == "honorificSuffix")?.text;
+						if ("jr" == pax.HonorificSuffix)
+						{
+							pax.HonorificSuffix = "Jr";
+						}
+
 						pax.BirthDate = properties.SingleOrDefault(p => p.itemprop == "birthDate")?.content.ParseTitanicaDate();
 						if (pax.BirthDate.HasValue)
 						{
