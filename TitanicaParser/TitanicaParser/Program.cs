@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -12,14 +11,13 @@ using System.Threading.Tasks;
 using System.Xml;
 using System.Xml.Serialization;
 using AngleSharp.Dom;
-using AngleSharp.Dom.Html;
-using AngleSharp.Extensions;
-using AngleSharp.Parser.Html;
+using AngleSharp.Html.Dom;
+using AngleSharp.Html.Parser;
 using TitanicaParser.Model;
 
 namespace TitanicaParser
 {
-	class Program
+    class Program
 	{
 		static void Main(string[] args)
 		{
@@ -113,7 +111,7 @@ namespace TitanicaParser
 				foreach (var zipEntry in zip.Entries.Where(e => e.IsRootFile()))
 				{
 					string html = zipEntry.ReadContentAsString();
-					IHtmlDocument htmlDoc = new HtmlParser().Parse(html);
+					IHtmlDocument htmlDoc = new HtmlParser().ParseDocument(html);
 
 					foreach (var tr in htmlDoc.QuerySelector("#manifest").QuerySelectorAll("tr"))
 					{
@@ -200,7 +198,7 @@ namespace TitanicaParser
 					if (zipEntry == null) continue;
 
 					string html = zipEntry.ReadContentAsString();
-					IHtmlDocument htmlDoc = new HtmlParser().Parse(html);
+					IHtmlDocument htmlDoc = new HtmlParser().ParseDocument(html);
 					IElement personElement = htmlDoc.QuerySelector(".sidebar > div[itemtype='http://schema.org/Person']");
 
 					// Birth place
@@ -381,7 +379,7 @@ namespace TitanicaParser
 
 		static void MinifyHtml(string filePath)
 		{
-			IHtmlDocument htmlDoc = new HtmlParser().Parse(File.ReadAllText(filePath));
+			IHtmlDocument htmlDoc = new HtmlParser().ParseDocument(File.ReadAllText(filePath));
 
 			string[] selectors = {
 				"table#myTable", // Contains photographs only
