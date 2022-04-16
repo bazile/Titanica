@@ -21,7 +21,7 @@ namespace TitanicaParser
 	{
 		static void Main(string[] args)
 		{
-			////MinifyAllHtml(GetHtmlPath());
+			//MinifyAllHtml(GetHtmlPath());
 
 			ParseAll();
 
